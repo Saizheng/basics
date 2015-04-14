@@ -4,12 +4,6 @@ import numpy as np
 from util import *
 import pdb
 
-def sgd(cost, params, lr=0.01):
-    grads = T.grad(cost=cost, wrt=params)
-    updates = []
-    for p, g in zip(params, grads):
-        updates.append([p, p - g * lr])
-    return updates
 
 class MainLoop(object):
     def __init__(self, data, model, configs, **kwargs):
