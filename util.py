@@ -8,16 +8,26 @@ from theano.compat.python2x import OrderedDict
 from theano.sandbox.rng_mrg import MRG_RandomStreams
 
 
+RNG = MRG_RandomStreams(max(np.random.RandomState(1364).randint(2 ** 15), 1))
+
 def castX(x) : return theano._asarray(x, dtype=theano.config.floatX)
 def sharedX(x) : return theano.shared( theano._asarray(x, dtype=theano.config.floatX) ) 
 def randn(shape,mean,std) : return sharedX( mean + std * np.random.standard_normal(size=shape) )
+def randn_np(shape,mean,std) : return mean + std * np.random.standard_normal(size=shape)
 def rand(shape, irange) : return sharedX( - irange + 2 * irange * np.random.rand(*shape) )
 def zeros(shape) : return sharedX( np.zeros(shape) ) 
+def ones(shape) : return sharedX(np.ones(shape))
+def eye(shape) : return sharedX(np.eye(shape))
 
 def rand_ortho(shape, irange) : 
     A = - irange + 2 * irange * np.random.rand(*shape)
     U, s, V = np.linalg.svd(A, full_matrices=True)
     return sharedX(  np.dot(U, np.dot( np.eye(U.shape[1], V.shape[0]), V )) )
+
+def rand_ortho_np(shape, irange) : 
+    A = - irange + 2 * irange * np.random.rand(*shape)
+    U, s, V = np.linalg.svd(A, full_matrices=True)
+    return np.dot(U, np.dot( np.eye(U.shape[1], V.shape[0]), V ))
 
 def one_hot(labels, nC=None):
     nC = np.max(labels) + 1 if nC is None else nC
@@ -32,22 +42,47 @@ def T_one_hot(t, r=None):
 
 def sigm(x) : return T.nnet.sigmoid(x)
 def sfmx(x) : return T.nnet.softmax(x)
+
+def sfmx3(x) :
+    result, updates = theano.scan(fn = lambda x_: sfmx(x_),
+                                  outputs_info = None,
+                                  sequences = [x])
+    return result
+
 def tanh(x) : return T.tanh(x)
 def sign(x) : return T.switch(x > 0., 1., -1.)
+def linear(x) : return x
 
 def softplus(x) : return T.nnet.softplus(x)
 
-def relu(x) : return T.switch(x > 0., x, 0.)
+#def relu(x) : return T.switch(x > 0., x, 0.)
+def relu(x) : return x * (x > 1e-15)
 def relu_(x) : return T.switch(x > 0., x, x/10.)
+def reluz(x) : return T.switch(x>0., x, -x)
+def relx(x) : return T.switch(x>0., reluz(x-1), reluz(x+1))
+
+def reluzp(x, rng = RNG) :
+    z = reluz(x)
+    return z*rng.binomial(size = z.shape, p = sigm(z), dtype = theano.config.floatX)
+# similar performance to relu
 def relog(x) : return T.switch(x > 0., T.log(x+1), 0.)
 
-def wcomp(W, x):
+# weight competition, it does not work well at this time though
+def wcomp(W, x, ifprob = True):
     out = x.dimshuffle(0,1,'x')*W
     m = abs(out).max(axis=1)
     p = abs(out)/m.dimshuffle(0,'x',1)
-    rand = RNG.uniform(p.shape, ndim=None, dtype=None, nstreams=None)
-    mask = T.cast(rand < p, dtype = 'floatX' )
+    if ifprob:
+        rand = RNG.uniform(p.shape, ndim=None, dtype=None, nstreams=None)
+        mask = T.cast(rand < p, dtype = 'floatX' )
+    else:
+        mask = p
     return (out*mask).sum(axis=1)
+
+def wgate(W, x):
+    gate = 0.01#0.0001 
+    out = x.dimshuffle(0,1,'x')*W
+    return (out*(abs(out)>gate)).sum(axis=1)
 
 #def negative_log_likelihood(probs, labels) : # labels are not one-hot code 
 #    return - T.mean( T.log(probs)[T.arange(labels.shape[0]), T.cast(labels,'int32')] )
@@ -75,14 +110,15 @@ def error(pred_labels,labels) : return 100.*T.mean(T.neq(pred_labels, labels)) #
 
 #def error(pred_labels,labels) : return 100.*T.mean(T.neq(pred_labels, labels)) # get error (%)
 
-def mse(x,y) : return T.sqr(x-y).sum(axis=1).mean() # mean squared error
+def mse(x,y, ax=1) : return T.sqr(x-y).sum(axis=ax).mean(axis=-1) # mean squared error
+
+def se(x,y, ax=1) : return T.sqr(x-y).sum(axis=ax) # mean squared error
 #def mce(p,t) : return T.nnet.binary_crossentropy( (p+1.001)/2.002, (t+1.001)/2.002 ).sum(axis=1).mean()
 
 def mce(p,t) : return T.nnet.binary_crossentropy( p, t ).sum(axis=1).mean()
 
 
 
-RNG = MRG_RandomStreams(max(np.random.RandomState(1364).randint(2 ** 15), 1))
 
 def samp_rect(x, offset=3):
     rand = RNG.uniform(x.shape, ndim=None, dtype=None, nstreams=None)
@@ -209,7 +245,7 @@ def DisplayNetwork(data, nx, ny, width) :
     plt.imshow(data_, cmap = cm.Greys_r)
     plt.savefig('t.png')
 
-def visualize(n) :
-    samples = np.load('generated_samples.npy')
-    DisplayNetwork(samples[n:n + 1000], 10, 10, 28) 
+def visualize(n_start, n_end, filename = 'wgt.npy') :
+    samples = np.load(filename)
+    DisplayNetwork(samples[n_start:n_end], 10, 10, 28) 
 
