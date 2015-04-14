@@ -12,6 +12,19 @@ class dataset_MNIST(object):
         (self.test_x, self.test_y) \
             = np.load(path)
 
+    # DC centering and contrast normalization
+    def pre(self, data):
+        N = data.shape[0]
+        data_ = data 
+        # preprocessing
+        for i in xrange(N):
+            #DC centering
+            P = data_[i] - data_[i].mean()
+            #contrast normalization
+            P = P/np.sqrt(np.sum(P*P)+0.01)
+            data_[i] = P 
+        return data_
+
     # numpy form
     def np(self):
         return self.train_x, self.train_y, \
